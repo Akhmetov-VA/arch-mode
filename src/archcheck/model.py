@@ -47,7 +47,6 @@ class Config:
 class Import:
     name: str        # absolute dotted name; relative imports are already resolved against the package
     line: int
-    relative: bool
 
 
 @dataclass

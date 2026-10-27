@@ -11,7 +11,7 @@ def test_cycle_between_packages_is_an_error(project):
     [f] = project.findings(rule="component-cycle")
     assert f["severity"] == "error"
     assert "a" in f["message"] and "b" in f["message"]
-    assert sorted([f["path"], *f["related"]]) == ["a/x.py", "b/y.py"]
+    assert f["path"] == "a/x.py" and f["related"] == ["b/y.py"]
 
 
 def test_one_way_dependency_is_not_a_cycle(project):
@@ -49,7 +49,9 @@ def test_abstractness_counts_abstract_classes_and_protocols(project):
 
 def test_distance_from_main_sequence(project):
     project.write({"a/x.py": "import b.y\n", "b/y.py": "class Concrete: ...\n"})
-    assert metrics(project)["b"]["distance"] == 1.0   # stable and concrete: zone of pain
+    m = metrics(project)
+    assert m["b"]["distance"] == 1.0   # stable and concrete: zone of pain
+    assert m["a"]["distance"] == 0.0   # unstable and concrete: on the main sequence
 
 
 def test_stable_package_depending_on_unstable_one_is_a_warning(project):
@@ -74,5 +76,24 @@ def test_generic_protocol_and_abc_metaclass_are_abstract(project):
         import typing
         class Repo(typing.Protocol[T]): ...
         class Store(metaclass=abc.ABCMeta): ...
+        class Plain(metaclass=type): ...
+        class Other(Base, metaclass=type): ...
     """})
-    assert metrics(project)["p"]["abstractness"] == 1.0
+    assert metrics(project)["p"]["abstractness"] == 0.5
+
+
+def test_equal_instability_is_not_a_warning(project):
+    project.write({"s/m.py": "import p.m\n", "p/m.py": "import q.m\n", "q/m.py": "import t.m\n", "t/m.py": ""})
+    m = metrics(project)
+    assert m["p"]["instability"] == m["q"]["instability"] == 0.5
+    assert project.findings(rule="unstable-dependency") == []
+
+
+def test_import_of_a_name_from_package_init_is_an_edge_to_the_package(project):
+    project.write({"a/__init__.py": "def f(): ...\n", "a/x.py": "import b.y\n", "b/y.py": "from a import f\n"})
+    assert len(project.findings(rule="component-cycle")) == 1
+
+
+def test_deep_package_init_is_named_after_its_package(project):
+    project.write({"a/b/__init__.py": "def f(): ...\n", "a/b/x.py": "import c.y\n", "c/y.py": "from a.b import f\n"})
+    assert len(project.findings(rule="component-cycle")) == 1

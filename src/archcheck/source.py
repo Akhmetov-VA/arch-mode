@@ -67,7 +67,7 @@ def _load(path: Path, src: Path, root: Path) -> tuple[Module, Finding | None]:
     try:
         module.tree = ast.parse(text, filename=rel)
     except SyntaxError as exc:
-        return module, Finding("parse-error", ERROR, rel, exc.lineno or 1, f"cannot parse: {exc.msg}")
+        return module, Finding("parse-error", ERROR, rel, exc.lineno, f"cannot parse: {exc.msg}")
     module.imports = list(_imports(module.tree, package))
     return module, None
 
@@ -75,17 +75,17 @@ def _load(path: Path, src: Path, root: Path) -> tuple[Module, Finding | None]:
 def _imports(tree: ast.Module, package: str):
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            yield from (Import(alias.name, node.lineno, False) for alias in node.names)
+            yield from (Import(alias.name, node.lineno) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             base = _absolute(node, package)
             for alias in node.names:
                 name = base if alias.name == "*" else f"{base}.{alias.name}".lstrip(".")
-                yield Import(name, node.lineno, node.level > 0)
+                yield Import(name, node.lineno)
 
 
 def _absolute(node: ast.ImportFrom, package: str) -> str:
     if not node.level:
         return node.module or ""
     parts = [] if package == "." else package.split(".")
-    keep = parts[:max(len(parts) - (node.level - 1), 0)]
+    keep = parts[:len(parts) - node.level + 1]
     return ".".join(keep + ([node.module] if node.module else []))

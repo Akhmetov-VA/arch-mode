@@ -133,7 +133,9 @@ def type_switch(node, names):
         return None
     checked = Counter(ast.unparse(c.args[0]) for test in _if_tests(node) for c in ast.walk(test)
                       if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "isinstance" and c.args)
-    value, count = checked.most_common(1)[0] if checked else ("", 0)
+    if not checked:
+        return None
+    value, count = checked.most_common(1)[0]
     if count >= 3:
         return ("type-switch", WARNING, node.lineno,
                 f"{node.name}: {count} isinstance checks on {value}; if this switch repeats, move the behavior "
@@ -169,9 +171,6 @@ def deep_inheritance(modules: list[Module]) -> list[Finding]:
 
 def _chain(name: str, classes: dict, seen: tuple[str, ...]) -> list[str]:
     """Longest line of project ancestors: [name, parent, grandparent, ...]."""
-    longest: list[str] = []
-    for base in classes[name][0]:
-        if base in classes and base not in seen and base != name:
-            candidate = _chain(base, classes, seen + (name,))
-            longest = candidate if len(candidate) > len(longest) else longest
-    return [name, *longest]
+    parents = [_chain(base, classes, seen + (name,)) for base in classes[name][0]
+               if base in classes and base not in seen and base != name]
+    return [name, *max(parents, key=len, default=[])]

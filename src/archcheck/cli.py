@@ -5,7 +5,6 @@ Exit code: 0 clean, 1 errors (or warnings with --strict), 2 configuration or git
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 from pathlib import Path
@@ -50,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     result = report.build(config, modules, findings, packages)
     if not args.no_write:
         report.write_snapshot(root, result)
-    print(json.dumps(result, ensure_ascii=False, indent=1) if args.json else report.render(result))
+    print(report.to_json(result) if args.json else report.render(result))
     failed = result["summary"]["errors"] or (args.strict and result["summary"]["warnings"])
     return 1 if failed else 0
 

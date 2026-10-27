@@ -16,8 +16,8 @@ IO = frozenset({
 
 
 def layer_index(layers: tuple[Layer, ...], module: str) -> int | None:
-    claim, index = max(((layer.claim(module), i) for i, layer in enumerate(layers)), default=(0, None))
-    return index if claim else None
+    best = max(range(len(layers)), key=lambda i: layers[i].claim(module), default=None)
+    return best if best is not None and layers[best].claim(module) else None
 
 
 def dependency_rule(layers: tuple[Layer, ...], edges: list[Edge]) -> list[Finding]:

@@ -43,7 +43,8 @@ def test_three_levels_of_project_inheritance_is_a_warning(project):
         class D(C): ...
     """})
     [f] = project.findings(rule="deep-inheritance")
-    assert f["path"] == "kids.py" and f["line"] == 4 and "D" in f["message"]
+    assert f["path"] == "kids.py" and f["line"] == 4
+    assert "class D inherits through 3 project classes (D -> C -> B -> A)" in f["message"]
 
 
 def test_inheriting_from_library_classes_does_not_count(project):

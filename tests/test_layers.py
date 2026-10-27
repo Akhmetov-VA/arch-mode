@@ -27,6 +27,29 @@ def test_outer_layers_may_import_inner_layers(project):
     assert project.findings(rule="dependency-rule") == []
 
 
+def test_imports_inside_one_layer_are_fine(project):
+    shop(project).write({"shop/domain/money.py": "from shop.domain.order import Order\n"})
+    assert project.findings(rule="dependency-rule") == []
+
+
+def test_modules_outside_every_layer_are_not_checked(project):
+    shop(project, domain="from shop.util import helper\n").write({"shop/util.py": "from shop.adapters.db import x\n"})
+    assert project.findings(rule="dependency-rule") == []
+
+
+def test_single_name_module_at_the_root_is_resolved(project):
+    project.layers("""
+        [[tool.archcheck.layers]]
+        name = "core"
+        modules = ["core"]
+        [[tool.archcheck.layers]]
+        name = "main"
+        modules = ["main"]
+    """).write({"core.py": "import main\n", "main.py": "import core\n"})
+    [f] = project.findings(rule="dependency-rule")
+    assert f["path"] == "core.py"
+
+
 def test_relative_import_is_resolved(project):
     shop(project, app="from ..adapters import db\n")
     [f] = project.findings(rule="dependency-rule")
@@ -94,3 +117,8 @@ def test_layer_without_modules_is_a_config_error(project):
     project.layers('[[tool.archcheck.layers]]\nname = "domain"\n').write({"a.py": ""})
     code, out = project.run()
     assert code == 2 and "domain" in out
+
+
+def test_layer_without_a_name_is_numbered_from_one(project):
+    project.layers('[[tool.archcheck.layers]]\nmodules = ["a"]\n[[tool.archcheck.layers]]\npure = true\n').write({"a.py": ""})
+    assert "layer 2" in project.run()[1]

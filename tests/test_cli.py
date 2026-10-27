@@ -41,6 +41,11 @@ def test_inline_ignore_for_other_rule_does_not_suppress(project):
     assert len(project.findings(rule="network-timeout")) == 1
 
 
+def test_inline_ignore_works_on_the_first_line(project):
+    project.write({"app.py": "import requests; requests.get(url)  # archcheck: ignore[network-timeout]\n"})
+    assert project.findings() == []
+
+
 def test_bare_inline_ignore_suppresses_everything_on_the_line(project):
     project.write({"app.py": "import requests\nrequests.get(url)  # archcheck: ignore\n"})
     assert project.findings() == []
@@ -84,8 +89,22 @@ def test_changed_reports_only_files_changed_in_git(project):
 
 
 def test_paths_limit_the_report(project):
-    project.write({"a/x.py": NO_TIMEOUT, "b/y.py": NO_TIMEOUT})
-    assert [f["path"] for f in project.findings("a")] == ["a/x.py"]
+    project.write({"a/x.py": NO_TIMEOUT, "a/z.py": NO_TIMEOUT, "b/y.py": NO_TIMEOUT})
+    assert [f["path"] for f in project.findings("a")] == ["a/x.py", "a/z.py"]
+    assert [f["path"] for f in project.findings("a/z.py")] == ["a/z.py"]
+
+
+def test_errors_are_listed_before_warnings(project):
+    project.write({"a.py": GLOBAL, "b.py": NO_TIMEOUT})
+    out = project.run()[1]
+    assert out.index("ERROR") < out.index("WARNING")
+
+
+def test_header_names_layers_inner_to_outer(project):
+    project.write({"pyproject.toml": "[[tool.archcheck.layers]]\nname = 'домен'\nmodules = ['d']\n"
+                                     "[[tool.archcheck.layers]]\nname = 'web'\nmodules = ['w']\n", "d.py": ""})
+    assert "layers: домен -> web (inner -> outer)" in project.run()[1]
+    assert '"домен"' in project.run("--json")[1]
 
 
 def test_snapshot_is_written_to_metrics(project):
@@ -105,6 +124,7 @@ def test_syntax_error_is_reported_not_fatal(project):
     project.write({"bad.py": "def (:\n", "app.py": NO_TIMEOUT})
     found = project.findings()
     assert {f["rule"] for f in found} == {"parse-error", "network-timeout"}
+    assert [f["line"] for f in found if f["rule"] == "parse-error"] == [1]
 
 
 def test_broken_toml_is_a_config_error(project):

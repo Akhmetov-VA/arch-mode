@@ -12,7 +12,7 @@ SUPPRESS = re.compile(r"#\s*archcheck:\s*ignore(?:\[([^\]]*)\])?")
 
 def suppressed(f: Finding, lines: dict[str, list[str]]) -> bool:
     text = lines.get(f.path, [])
-    match = SUPPRESS.search(text[f.line - 1]) if 0 < f.line <= len(text) else None
+    match = SUPPRESS.search(text[f.line - 1]) if f.line <= len(text) else None
     if not match:
         return False
     return match.group(1) is None or f.rule in {r.strip() for r in match.group(1).split(",")}
@@ -55,7 +55,11 @@ def _count(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
+def to_json(report: dict) -> str:
+    return json.dumps(report, ensure_ascii=False)
+
+
 def write_snapshot(root: Path, report: dict) -> None:
     path = root / ".metrics" / "arch.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(to_json(report), encoding="utf-8")

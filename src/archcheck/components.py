@@ -9,14 +9,15 @@ from archcheck.model import ERROR, WARNING, Edge, Finding, Module
 Graph = dict[str, dict[str, list[Edge]]]   # package -> package it imports -> import sites
 
 
-def resolve(name: str, importer: Module, known: set[str], relative: bool) -> str | None:
+def resolve(name: str, importer: Module, known: set[str]) -> str | None:
     """Project module that an import refers to, or None for a library."""
-    found = _longest_known(name, known)
-    if found or relative or importer.package == ".":
-        return found
-    # script style: a directory on sys.path imports its sibling files by bare name
-    sibling = _longest_known(f"{importer.package}.{name}", known)
-    return sibling if sibling and sibling.startswith(importer.package + ".") else None
+    return _longest_known(name, known) or _sibling(name, importer, known)
+
+
+def _sibling(name: str, importer: Module, known: set[str]) -> str | None:
+    """Script style: a directory on sys.path imports its sibling files by bare name."""
+    found = _longest_known(f"{importer.package}.{name}", known)
+    return found if found and found.startswith(importer.package + ".") else None
 
 
 def _longest_known(name: str, known: set[str]) -> str | None:
@@ -29,7 +30,7 @@ def project_edges(modules: list[Module]) -> list[Edge]:
     edges = []
     for m in modules:
         for imp in m.imports:
-            target = resolve(imp.name, m, known, imp.relative)
+            target = resolve(imp.name, m, known)
             if target and target != m.name:
                 edges.append(Edge(m, target, imp.line))
     return edges
@@ -104,25 +105,25 @@ class PackageMetrics:
 
 def metrics(modules: list[Module], graph: Graph) -> dict[str, PackageMetrics]:
     afferent = {p: sum(p in deps for deps in graph.values()) for p in graph}
-    classes = _class_counts(modules)
+    classes = _abstract_flags(modules)
     result = {}
     for p in sorted(graph):
         ca, ce = afferent[p], len(graph[p])
         i = ce / (ca + ce) if ca + ce else 0.0
-        total, abstract = classes.get(p, (0, 0))
-        a = abstract / total if total else 0.0
+        flags = classes.get(p, [])
+        a = sum(flags) / len(flags) if flags else 0.0
         result[p] = PackageMetrics(p, ca, ce, round(i, 3), round(a, 3), round(abs(a + i - 1), 3))
     return result
 
 
-def _class_counts(modules: list[Module]) -> dict[str, tuple[int, int]]:
-    counts: dict[str, tuple[int, int]] = {}
+def _abstract_flags(modules: list[Module]) -> dict[str, list[bool]]:
+    """Package -> is_abstract for each of its classes."""
+    flags: dict[str, list[bool]] = {}
     for m in modules:
         for node in ast.walk(m.tree) if m.tree else ():
             if isinstance(node, ast.ClassDef):
-                total, abstract = counts.get(m.package, (0, 0))
-                counts[m.package] = (total + 1, abstract + is_abstract(node))
-    return counts
+                flags.setdefault(m.package, []).append(is_abstract(node))
+    return flags
 
 
 def is_abstract(cls: ast.ClassDef) -> bool:

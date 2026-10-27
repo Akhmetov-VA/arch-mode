@@ -135,3 +135,16 @@ def test_relative_import_from_own_package_is_resolved(project):
     """).write({"app/core/rules.py": "from .web import handler\n", "app/core/web/handler.py": ""})
     [f] = project.findings(rule="dependency-rule")
     assert f["path"] == "app/core/rules.py"
+
+
+def test_relative_import_two_levels_up_from_a_deep_package(project):
+    project.layers("""
+        [[tool.archcheck.layers]]
+        name = "core"
+        modules = ["a.b.c"]
+        [[tool.archcheck.layers]]
+        name = "io"
+        modules = ["a.b.x"]
+    """).write({"a/b/c/m.py": "from ..x import y\n", "a/b/x/y.py": ""})
+    [f] = project.findings(rule="dependency-rule")
+    assert f["path"] == "a/b/c/m.py"

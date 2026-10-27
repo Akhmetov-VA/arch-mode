@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     packages = components.metrics(modules, graph)
     found = (problems + layers.dependency_rule(config.layers, edges) + layers.pure_layer(config.layers, modules)
              + components.cycles(graph) + components.unstable_dependencies(graph, packages)
-             + checks.deep_inheritance(modules) + [f for m in modules for f in checks.module_checks(m)])
+             + checks.deep_inheritance(modules) + _module_checks(modules))
     findings = report.select(found, modules, config, [_scope(root, p) for p in args.paths], changed)
     result = report.build(config, modules, findings, packages)
     if not args.no_write:
@@ -52,6 +52,11 @@ def main(argv: list[str] | None = None) -> int:
     print(report.to_json(result) if args.json else report.render(result))
     failed = result["summary"]["errors"] or (args.strict and result["summary"]["warnings"])
     return 1 if failed else 0
+
+
+def _module_checks(modules) -> list:
+    classes = checks.project_classes(modules)
+    return [f for m in modules for f in checks.module_checks(m, classes)]
 
 
 def _scope(root: Path, path: str) -> str:

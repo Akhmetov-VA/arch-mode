@@ -56,5 +56,5 @@ def _file_io(m: Module, layer: Layer) -> list[Finding]:
         return []
     return [Finding("pure-layer", ERROR, m.path, node.lineno,
                     f"layer {layer.name} opens files: take the data, or a port that reads it, as an argument")
-            for node in ast.walk(m.tree)
+            for node in m.nodes
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open"]

@@ -68,12 +68,13 @@ def _load(path: Path, src: Path, root: Path) -> tuple[Module, Finding | None]:
         module.tree = ast.parse(text, filename=rel)
     except SyntaxError as exc:
         return module, Finding("parse-error", ERROR, rel, exc.lineno, f"cannot parse: {exc.msg}")
-    module.imports = list(_imports(module.tree, package))
+    module.nodes = list(ast.walk(module.tree))
+    module.imports = list(_imports(module.nodes, package))
     return module, None
 
 
-def _imports(tree: ast.Module, package: str):
-    for node in ast.walk(tree):
+def _imports(nodes: list[ast.AST], package: str):
+    for node in nodes:
         if isinstance(node, ast.Import):
             yield from (Import(alias.name, node.lineno) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):

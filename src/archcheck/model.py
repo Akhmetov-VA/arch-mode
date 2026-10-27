@@ -57,6 +57,7 @@ class Module:
     tree: ast.Module | None
     lines: list[str]
     imports: list[Import] = field(default_factory=list)
+    nodes: list[ast.AST] = field(default_factory=list)   # every node of tree, walked once
 
 
 @dataclass(frozen=True)

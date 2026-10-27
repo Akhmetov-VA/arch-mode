@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
+from dataclasses import dataclass
 
 from archcheck.components import base_name
 from archcheck.model import ERROR, WARNING, Finding, Module
@@ -18,10 +19,20 @@ NAIVE_WITHOUT_TZ = {"datetime.datetime.now"}
 BROAD = {"Exception", "BaseException"}
 
 
-def aliases(tree: ast.Module) -> dict[str, str]:
+@dataclass(frozen=True)
+class Scope:
+    names: dict[str, str]          # local name -> qualified name it was imported as
+    classes: frozenset[str]        # names of classes defined anywhere in the project
+
+
+def project_classes(modules: list[Module]) -> frozenset[str]:
+    return frozenset(n.name for m in modules for n in m.nodes if isinstance(n, ast.ClassDef))
+
+
+def aliases(nodes: list[ast.AST]) -> dict[str, str]:
     """Local name -> qualified name it was imported as."""
     names = {}
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Import):
             names.update(_import_aliases(node))
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
@@ -45,14 +56,12 @@ def qualname(node: ast.expr, names: dict[str, str]) -> str | None:
     return ".".join([names[node.id], *reversed(chain)])
 
 
-def module_checks(m: Module) -> list[Finding]:
-    if m.tree is None:
-        return []
-    names = aliases(m.tree)
+def module_checks(m: Module, classes: frozenset[str]) -> list[Finding]:
+    scope = Scope(aliases(m.nodes), classes)
     found = []
-    for node in ast.walk(m.tree):
+    for node in m.nodes:
         for check in NODE_CHECKS:
-            hit = check(node, names)
+            hit = check(node, scope)
             if hit:
                 found.append(Finding(hit[0], hit[1], m.path, hit[2], hit[3]))
     return found
@@ -66,10 +75,10 @@ def _timeout(call: ast.Call, position: int | None) -> str:
     return "set" if position is not None and len(call.args) > position else "missing"
 
 
-def network_timeout(node, names):
+def network_timeout(node, scope):
     if not isinstance(node, ast.Call):
         return None
-    q = qualname(node.func, names)
+    q = qualname(node.func, scope.names)
     if q in NETWORK and _timeout(node, TIMEOUT_POSITION.get(q)) != "set":
         return ("network-timeout", ERROR, node.lineno, f"{q} without a timeout: an unbounded wait is a hang")
     if q in HTTPX and _timeout(node, None) == "none":
@@ -81,17 +90,17 @@ def _calls(node, names, wanted) -> bool:
     return isinstance(node, ast.Call) and qualname(node.func, names) in wanted
 
 
-def wall_clock_duration(node, names):
+def wall_clock_duration(node, scope):
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Sub) and \
-            (_calls(node.left, names, {"time.time"}) or _calls(node.right, names, {"time.time"})):
+            (_calls(node.left, scope.names, {"time.time"}) or _calls(node.right, scope.names, {"time.time"})):
         return ("wall-clock-duration", WARNING, node.lineno,
                 "duration measured with time.time(): the wall clock jumps; use time.monotonic()")
     return None
 
 
-def naive_datetime(node, names):
-    naive = _calls(node, names, NAIVE_ALWAYS) or \
-        (_calls(node, names, NAIVE_WITHOUT_TZ) and not node.args and not node.keywords)
+def naive_datetime(node, scope):
+    naive = _calls(node, scope.names, NAIVE_ALWAYS) or \
+        (_calls(node, scope.names, NAIVE_WITHOUT_TZ) and not node.args and not node.keywords)
     if naive:
         return ("naive-datetime", WARNING, node.lineno,
                 "naive datetime: keep time in UTC with tzinfo, e.g. datetime.now(timezone.utc)")
@@ -110,7 +119,7 @@ def _empty(stmt: ast.stmt) -> bool:
     return isinstance(stmt, (ast.Pass, ast.Continue)) or (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
 
 
-def swallowed_error(node, names):
+def swallowed_error(node, scope):
     if isinstance(node, ast.ExceptHandler) and _broad(node.type) and all(_empty(s) for s in node.body):
         return ("swallowed-error", WARNING, node.lineno,
                 "broad exception swallowed: a hidden fault becomes a later failure; handle it, log it or re-raise")
@@ -128,22 +137,34 @@ def _if_tests(fn):
         stack.extend(ast.iter_child_nodes(node))
 
 
-def type_switch(node, names):
+def _isinstance_checks(fn):
+    """(checked value, names of the classes it is checked against) for each isinstance in the function's ifs."""
+    for test in _if_tests(fn):
+        for c in ast.walk(test):
+            if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "isinstance" and len(c.args) == 2:
+                kinds = c.args[1].elts if isinstance(c.args[1], ast.Tuple) else [c.args[1]]
+                yield ast.unparse(c.args[0]), {base_name(k) for k in kinds}
+
+
+def type_switch(node, scope):
+    """Three or more isinstance checks on one value, at least one against a project class: only then can the
+    behavior move into the types. A switch over library or builtin types is parsing, not a design smell."""
     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return None
-    checked = Counter(ast.unparse(c.args[0]) for test in _if_tests(node) for c in ast.walk(test)
-                      if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "isinstance" and c.args)
-    if not checked:
+    counts, owned = Counter(), set()
+    for value, kinds in _isinstance_checks(node):
+        counts[value] += 1
+        owned |= {value} if kinds & scope.classes else set()
+    switches = [(value, n) for value, n in counts.most_common() if n >= 3 and value in owned]
+    if not switches:
         return None
-    value, count = checked.most_common(1)[0]
-    if count >= 3:
-        return ("type-switch", WARNING, node.lineno,
-                f"{node.name}: {count} isinstance checks on {value}; if this switch repeats, move the behavior "
-                f"into the types (polymorphism, Strategy, State or Visitor)")
-    return None
+    value, count = switches[0]
+    return ("type-switch", WARNING, node.lineno,
+            f"{node.name}: {count} isinstance checks on {value}; if this switch repeats, move the behavior "
+            f"into the types (polymorphism, Strategy, State or Visitor)")
 
 
-def global_state(node, names):
+def global_state(node, scope):
     if isinstance(node, ast.Global):
         return ("global-state", WARNING, node.lineno,
                 f"global {', '.join(node.names)}: hidden shared state; pass it in, or give it one owner")
@@ -156,7 +177,7 @@ NODE_CHECKS = (network_timeout, wall_clock_duration, naive_datetime, swallowed_e
 def deep_inheritance(modules: list[Module]) -> list[Finding]:
     classes: dict[str, tuple[list[str], Module, int]] = {}
     for m in modules:
-        for node in ast.walk(m.tree) if m.tree else ():
+        for node in m.nodes:
             if isinstance(node, ast.ClassDef):
                 classes.setdefault(node.name, ([base_name(b) for b in node.bases], m, node.lineno))
     found = []

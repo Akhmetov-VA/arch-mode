@@ -1,8 +1,11 @@
 """Design heuristics (Design Patterns): type switches, deep inheritance, hidden global state."""
 
 
-def test_type_switch_on_one_value_is_a_warning(project):
-    project.write({"shapes.py": """
+SHAPES = "class Circle: ...\nclass Square: ...\nclass Triangle: ...\n"
+
+
+def test_type_switch_on_project_classes_is_a_warning(project):
+    project.write({"kinds.py": SHAPES, "shapes.py": """
         def area(s):
             if isinstance(s, Circle):
                 return 3.14 * s.r ** 2
@@ -15,8 +18,29 @@ def test_type_switch_on_one_value_is_a_warning(project):
     assert f["severity"] == "warning" and f["line"] == 1 and "area" in f["message"]
 
 
+def test_type_switch_on_library_types_is_fine(project):
+    project.write({"conv.py": """
+        import ast
+        def lit(v):
+            if isinstance(v, bool):
+                return "b"
+            if isinstance(v, (int, float)):
+                return "n"
+            if isinstance(v, str):
+                return "s"
+        def visit(node):
+            if isinstance(node, ast.Name):
+                return 1
+            elif isinstance(node, ast.Call):
+                return 2
+            elif isinstance(node, ast.Attribute):
+                return 3
+    """})
+    assert project.findings(rule="type-switch") == []
+
+
 def test_two_type_checks_are_fine(project):
-    project.write({"shapes.py": """
+    project.write({"kinds.py": SHAPES, "shapes.py": """
         def area(s):
             if isinstance(s, Circle):
                 return 1
@@ -59,7 +83,7 @@ def test_global_statement_is_a_warning(project):
 
 
 def test_type_checks_in_nested_function_belong_to_it(project):
-    project.write({"m.py": """
+    project.write({"kinds.py": "class A: ...\nclass B: ...\nclass C: ...\n", "m.py": """
         def outer(s):
             if isinstance(s, A):
                 return 1

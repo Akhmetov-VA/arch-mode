@@ -120,7 +120,7 @@ def _abstract_flags(modules: list[Module]) -> dict[str, list[bool]]:
     """Package -> is_abstract for each of its classes."""
     flags: dict[str, list[bool]] = {}
     for m in modules:
-        for node in ast.walk(m.tree) if m.tree else ():
+        for node in m.nodes:
             if isinstance(node, ast.ClassDef):
                 flags.setdefault(m.package, []).append(is_abstract(node))
     return flags

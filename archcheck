@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run archcheck from this checkout; it has no dependencies beyond Python 3.10+.
+ROOT=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m archcheck "$@"

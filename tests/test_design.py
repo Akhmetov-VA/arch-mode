@@ -93,3 +93,16 @@ def test_type_checks_in_nested_function_belong_to_it(project):
             return inner
     """})
     assert project.findings(rule="type-switch") == []
+
+
+def test_project_class_inside_a_tuple_counts(project):
+    project.write({"kinds.py": SHAPES, "m.py": """
+        def f(s):
+            if isinstance(s, int):
+                return 1
+            if isinstance(s, str):
+                return 2
+            if isinstance(s, (Circle, Square)):
+                return 3
+    """})
+    assert len(project.findings(rule="type-switch")) == 1

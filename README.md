@@ -6,11 +6,20 @@ practice), arch-mode says where code goes, which way dependencies point and what
 fails. The rules are a condensed reading of three books:
 
 - **Clean Architecture** — Robert C. Martin: the Dependency Rule, entities and use cases, ports and adapters,
-  boundaries, component principles (ADP, SDP, SAP, CCP, CRP), SOLID.
+  Humble Object, boundaries, package by component, component principles (ADP, SDP, SAP, CCP, CRP), SOLID.
 - **Design Patterns: Elements of Reusable Object-Oriented Software** — Gamma, Helm, Johnson, Vlissides:
-  program to an interface, favor composition, patterns named by the force they resolve.
-- **Designing Data-Intensive Applications** — Martin Kleppmann: system of record and derived data, schema
-  evolution, isolation and lost updates, timeouts, idempotence, clocks, batch and stream.
+  program to an interface, favor composition, and all 23 patterns indexed by the force they resolve, with
+  their smaller Python form.
+- **Designing Data-Intensive Applications** — Martin Kleppmann (2nd edition with Chris Riccomini): system
+  of record and derived data, no dual writes, schema evolution, isolation, write skew and lost updates,
+  linearizability, timeouts, the end-to-end argument, clocks, batch and stream, backpressure, responsibility
+  for personal data.
+
+The rules were then checked against what practitioners most often stress or criticize in these books:
+Clean Architecture applied as ceremony (abstractions for a database swap that never comes, "layered" mistaken
+for "clean", ORM models inside entities, mapping boilerplate), pattern overuse and Norvig's observation that
+16 of the 23 patterns shrink in dynamic languages, and the DDIA lessons engineers repeat (dual writes and the
+outbox, idempotency keys end to end, tail latency amplification, last-write-wins losing data).
 
 The skill is paired with a deterministic gate, **archcheck**, in the same spirit as ub-mode's
 [crapper](https://github.com/unclebob/crapper), [dryer](https://github.com/unclebob/dryer) and
@@ -22,14 +31,14 @@ arch-mode adds no process of its own. Where both speak, they say the same thing:
 
 | ub-mode | arch-mode |
 |---|---|
-| Laziness Protocol: smallest edit, one decision in one place | Structure is added when its force is present; partial boundaries first; apply rules to the code you touch; one system of record |
+| Laziness Protocol: smallest edit, one decision in one place | Structure is added when its force is present; boundaries only where they are expensive to add later; a pattern on the second concrete case; not every feature needs every layer; one system of record |
 | Foundational Thinking: data shape first; no shared state under concurrent writers | Data section: model from access pattern, schemas that evolve, single writer for invariants |
 | Model the Domain, glossary | Entities and use cases; packages named in the domain's words |
 | Boundary Discipline: check data where it enters, pure business logic | The Dependency Rule, ports and adapters, pure layers (checked by archcheck) |
 | Make Operations Idempotent | Retries only for idempotent operations; at-least-once plus idempotent handlers; replayable derivations |
-| Separate Before Serializing Shared State | No Singleton or module-level mutable state; one writer, enforced in structure |
+| Separate Before Serializing Shared State | No Singleton or module-level mutable state; one writer, enforced in structure; never dual-write (checked by archcheck: `singleton`, `global-state`) |
 | Fix Root Causes | Do not swallow errors (checked by archcheck) |
-| Test Behavior, Not Implementation | Tests are the outermost circle; test use cases through their ports with fake adapters |
+| TDD; Test Behavior, Not Implementation | Tests are the outermost circle; Humble Object keeps the hard-to-test part free of logic; test use cases through their ports with fake adapters |
 | Crapper: consider whether case statements are worth reducing | A type switch repeated in several places moves into the types; one switch in one place is fine |
 | Build the Lever | archcheck is the lever for structure |
 | Then Make it Right: crapper, dryer, mutator | plus `archcheck --changed` |
@@ -107,9 +116,12 @@ Modules that belong to no layer are not checked by the layer rules.
 | `network-timeout` | error | DDIA, ch. 8 | `requests`, `urlopen`, `socket.create_connection` without a timeout, or `httpx` with `timeout=None` |
 | `parse-error` | error | — | the file does not parse |
 | `unstable-dependency` | warning | Clean Architecture (SDP) | a package depends on a less stable one |
-| `type-switch` | warning | Design Patterns | three or more `isinstance` checks on one value in a function |
+| `type-switch` | warning | Design Patterns | three or more `isinstance` checks on one value in a function, at least one against a project class |
 | `deep-inheritance` | warning | Design Patterns | a class inherits through three or more project classes |
 | `global-state` | warning | Design Patterns, ub-mode | a `global` statement |
+| `singleton` | warning | Design Patterns | a class that caches its only instance in `__new__`, or uses a singleton metaclass |
+| `language-serialization` | warning | DDIA, ch. 4 | `pickle`, `joblib`, `dill`, `marshal`, `shelve` load or dump |
+| `unbounded-queue` | warning | DDIA, ch. 11 | `queue`, `asyncio` or `multiprocessing` queue without `maxsize`, or `SimpleQueue` |
 | `wall-clock-duration` | warning | DDIA, ch. 8 | a duration computed from `time.time()` |
 | `naive-datetime` | warning | DDIA, ch. 8 | `datetime.now()` without tz, `utcnow()`, `today()` |
 | `swallowed-error` | warning | DDIA, ub-mode | a bare or broad `except` whose body does nothing |

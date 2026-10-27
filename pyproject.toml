@@ -23,3 +23,21 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
+
+[[tool.archcheck.layers]]
+name = "model"
+modules = ["archcheck.model"]
+pure = true
+
+[[tool.archcheck.layers]]
+name = "rules"
+modules = ["archcheck.components", "archcheck.layers", "archcheck.checks"]
+pure = true
+
+[[tool.archcheck.layers]]
+name = "io"
+modules = ["archcheck.config", "archcheck.source", "archcheck.report"]
+
+[[tool.archcheck.layers]]
+name = "main"
+modules = ["archcheck.cli", "archcheck.__main__"]

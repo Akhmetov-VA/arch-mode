@@ -103,7 +103,7 @@ def test_errors_are_listed_before_warnings(project):
 def test_header_names_layers_inner_to_outer(project):
     project.write({"pyproject.toml": "[[tool.archcheck.layers]]\nname = 'домен'\nmodules = ['d']\n"
                                      "[[tool.archcheck.layers]]\nname = 'web'\nmodules = ['w']\n", "d.py": ""})
-    assert "layers: домен -> web (inner -> outer)" in project.run()[1]
+    assert "archcheck: 1 module in 1 package; layers: домен -> web (inner -> outer)" in project.run()[1]
     assert '"домен"' in project.run("--json")[1]
 
 

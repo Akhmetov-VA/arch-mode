@@ -41,7 +41,8 @@ def build(config: Config, modules: list[Module], findings: list[Finding], packag
 
 def render(report: dict) -> str:
     layers = " -> ".join(report["layers"]) + " (inner -> outer)" if report["layers"] else "not configured"
-    out = [f"archcheck: {report['modules']} modules in {len(report['packages'])} packages; layers: {layers}"]
+    out = [f"archcheck: {_count(report['modules'], 'module')} in {_count(len(report['packages']), 'package')}; "
+           f"layers: {layers}"]
     out += [f"{f['severity'].upper():8} {f['rule']:20} {f['path']}:{f['line']}  {f['message']}" for f in report["findings"]]
     out += ["", f"{'Package':32} {'Ca':>4} {'Ce':>4} {'Instability':>12} {'Abstractness':>13} {'Distance':>9}"]
     out += [f"{p['package']:32} {p['ca']:>4} {p['ce']:>4} {p['instability']:>12.2f} {p['abstractness']:>13.2f} "

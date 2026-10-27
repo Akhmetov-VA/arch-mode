@@ -66,3 +66,13 @@ def test_stable_package_depending_on_unstable_one_is_a_warning(project):
 def test_files_at_the_root_form_one_package(project):
     project.write({"main.py": "import lib.x\n", "lib/x.py": ""})
     assert "." in metrics(project)
+
+
+def test_generic_protocol_and_abc_metaclass_are_abstract(project):
+    project.write({"p/ports.py": """
+        import abc
+        import typing
+        class Repo(typing.Protocol[T]): ...
+        class Store(metaclass=abc.ABCMeta): ...
+    """})
+    assert metrics(project)["p"]["abstractness"] == 1.0

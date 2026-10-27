@@ -23,12 +23,16 @@ def aliases(tree: ast.Module) -> dict[str, str]:
     names = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            for a in node.names:
-                names[a.asname or a.name.split(".")[0]] = a.name if a.asname else a.name.split(".")[0]
+            names.update(_import_aliases(node))
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            for a in node.names:
-                names[a.asname or a.name] = f"{node.module}.{a.name}"
+            names.update({a.asname or a.name: f"{node.module}.{a.name}" for a in node.names})
     return names
+
+
+def _import_aliases(node: ast.Import) -> dict[str, str]:
+    """'import a.b' binds a; 'import a.b as c' binds c to a.b."""
+    return {a.asname: a.name for a in node.names if a.asname} | \
+        {a.name.split(".")[0]: a.name.split(".")[0] for a in node.names if not a.asname}
 
 
 def qualname(node: ast.expr, names: dict[str, str]) -> str | None:

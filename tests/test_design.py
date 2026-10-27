@@ -55,3 +55,16 @@ def test_global_statement_is_a_warning(project):
     project.write({"cache.py": "_cache = {}\ndef reset():\n    global _cache\n    _cache = {}\n"})
     [f] = project.findings(rule="global-state")
     assert f["line"] == 3 and "_cache" in f["message"]
+
+
+def test_type_checks_in_nested_function_belong_to_it(project):
+    project.write({"m.py": """
+        def outer(s):
+            if isinstance(s, A):
+                return 1
+            def inner(t):
+                if isinstance(s, B) or isinstance(s, C):
+                    return 2
+            return inner
+    """})
+    assert project.findings(rule="type-switch") == []

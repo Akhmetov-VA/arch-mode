@@ -105,3 +105,29 @@ def test_syntax_error_is_reported_not_fatal(project):
     project.write({"bad.py": "def (:\n", "app.py": NO_TIMEOUT})
     found = project.findings()
     assert {f["rule"] for f in found} == {"parse-error", "network-timeout"}
+
+
+def test_broken_toml_is_a_config_error(project):
+    project.write({"pyproject.toml": "[tool.archcheck\nlayers = 1\n", "app.py": ""})
+    code, out = project.run()
+    assert code == 2 and "pyproject.toml" in out
+
+
+def test_unknown_config_key_is_a_config_error(project):
+    project.write({"pyproject.toml": "[tool.archcheck]\nlayer = []\n", "app.py": ""})
+    code, out = project.run()
+    assert code == 2 and "layer" in out
+
+
+def test_config_needs_python_311_to_be_read(project, monkeypatch):
+    from archcheck import config
+    monkeypatch.setattr(config, "tomllib", None)
+    project.write({"pyproject.toml": "[tool.archcheck]\n", "app.py": ""})
+    code, out = project.run()
+    assert code == 2 and "3.11" in out
+
+
+def test_changed_outside_git_is_an_error(project):
+    project.write({"app.py": ""})
+    code, out = project.run("--changed")
+    assert code == 2 and "git" in out

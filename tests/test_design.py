@@ -106,3 +106,26 @@ def test_project_class_inside_a_tuple_counts(project):
                 return 3
     """})
     assert len(project.findings(rule="type-switch")) == 1
+
+
+def test_singleton_with_instance_cache_is_a_warning(project):
+    project.write({"conf.py": """
+        class Settings:
+            _instance = None
+            def __new__(cls):
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                return cls._instance
+    """})
+    [f] = project.findings(rule="singleton")
+    assert f["severity"] == "warning" and f["line"] == 1 and "Settings" in f["message"]
+
+
+def test_singleton_metaclass_is_a_warning(project):
+    project.write({"conf.py": "class Settings(metaclass=SingletonMeta):\n    pass\n"})
+    assert len(project.findings(rule="singleton")) == 1
+
+
+def test_new_without_instance_cache_is_fine(project):
+    project.write({"m.py": "class Money(tuple):\n    def __new__(cls, amount):\n        return super().__new__(cls, (amount,))\n"})
+    assert project.findings(rule="singleton") == []

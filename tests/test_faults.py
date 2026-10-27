@@ -70,3 +70,43 @@ def test_swallowed_broad_error_is_a_warning(project, handler):
 def test_narrow_or_handled_error_is_fine(project, handler):
     project.write({"app.py": f"try:\n    work()\n{handler}\n"})
     assert lines(project, "swallowed-error") == []
+
+
+@pytest.mark.parametrize("code", [
+    "import pickle\npickle.load(f)\n",
+    "import pickle\npickle.dumps(x)\n",
+    "from joblib import dump\ndump(model, path)\n",
+    "import shelve\nshelve.open(path)\n",
+    "import marshal\nmarshal.loads(b)\n",
+])
+def test_language_specific_serialization_is_a_warning(project, code):
+    project.write({"app.py": code})
+    [f] = project.findings(rule="language-serialization")
+    assert f["severity"] == "warning" and f["line"] == 2
+
+
+def test_schema_formats_are_fine(project):
+    project.write({"app.py": "import json\njson.load(f)\njson.dumps(x)\n"})
+    assert project.findings(rule="language-serialization") == []
+
+
+@pytest.mark.parametrize("code", [
+    "import queue\nqueue.Queue()\n",
+    "import asyncio\nasyncio.Queue(maxsize=0)\n",
+    "from multiprocessing import Queue\nQueue()\n",
+    "import queue\nqueue.SimpleQueue()\n",
+])
+def test_unbounded_queue_is_a_warning(project, code):
+    project.write({"app.py": code})
+    [f] = project.findings(rule="unbounded-queue")
+    assert f["severity"] == "warning" and f["line"] == 2
+
+
+@pytest.mark.parametrize("code", [
+    "import queue\nqueue.Queue(100)\n",
+    "import asyncio\nasyncio.Queue(maxsize=10)\n",
+    "from collections import deque\ndeque()\n",
+])
+def test_bounded_queue_is_fine(project, code):
+    project.write({"app.py": code})
+    assert project.findings(rule="unbounded-queue") == []

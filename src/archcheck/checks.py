@@ -17,6 +17,11 @@ HTTPX = {f"httpx.{name}" for name in ("get", "post", "put", "patch", "delete", "
 NAIVE_ALWAYS = {"datetime.datetime.utcnow", "datetime.datetime.utcfromtimestamp", "datetime.datetime.today"}
 NAIVE_WITHOUT_TZ = {"datetime.datetime.now"}
 BROAD = {"Exception", "BaseException"}
+SERIALIZERS = {f"{lib}.{fn}" for lib in ("pickle", "dill", "cloudpickle", "marshal", "joblib")
+               for fn in ("load", "loads", "dump", "dumps")} | {"pickle.Pickler", "pickle.Unpickler", "shelve.open"}
+QUEUES = {"queue.Queue", "queue.LifoQueue", "queue.PriorityQueue", "asyncio.Queue", "asyncio.LifoQueue",
+          "asyncio.PriorityQueue", "multiprocessing.Queue", "multiprocessing.JoinableQueue"}
+SINGLETON_NAMES = {"_instance", "instance", "_instances", "__instance"}
 
 
 @dataclass(frozen=True)
@@ -171,7 +176,46 @@ def global_state(node, scope):
     return None
 
 
-NODE_CHECKS = (network_timeout, wall_clock_duration, naive_datetime, swallowed_error, type_switch, global_state)
+def language_serialization(node, scope):
+    name = qualname(node.func, scope.names) if isinstance(node, ast.Call) else None
+    if name in SERIALIZERS:
+        return ("language-serialization", WARNING, node.lineno,
+                f"{name}: a language-specific format ties the data to this code version and runs code on load; "
+                f"use a schema format (JSON, Avro, Protobuf, Parquet) for data that outlives the process")
+    return None
+
+
+def _bounded(call: ast.Call) -> bool:
+    size = call.args[0] if call.args else next((k.value for k in call.keywords if k.arg == "maxsize"), None)
+    return size is not None and not (isinstance(size, ast.Constant) and size.value in (0, None))
+
+
+def unbounded_queue(node, scope):
+    unbounded = isinstance(node, ast.Call) and (
+        qualname(node.func, scope.names) == "queue.SimpleQueue"
+        or (qualname(node.func, scope.names) in QUEUES and not _bounded(node)))
+    if unbounded:
+        return ("unbounded-queue", WARNING, node.lineno,
+                "unbounded queue: when consumers fall behind it grows until memory runs out; set maxsize and "
+                "choose backpressure, dropping or spilling")
+    return None
+
+
+def singleton(node, scope):
+    if not isinstance(node, ast.ClassDef):
+        return None
+    cached = any(isinstance(f, ast.FunctionDef) and f.name == "__new__" for f in node.body) and \
+        any(isinstance(n, ast.Attribute) and n.attr in SINGLETON_NAMES for n in ast.walk(node))
+    meta = any(k.arg == "metaclass" and "singleton" in base_name(k.value).lower() for k in node.keywords)
+    if cached or meta:
+        return ("singleton", WARNING, node.lineno,
+                f"class {node.name} is a Singleton: global access hides the dependency; create one instance in "
+                f"Main and pass it in")
+    return None
+
+
+NODE_CHECKS = (network_timeout, wall_clock_duration, naive_datetime, swallowed_error, type_switch, global_state,
+               language_serialization, unbounded_queue, singleton)
 
 
 def deep_inheritance(modules: list[Module]) -> list[Finding]:

@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.egg-info/
+.metrics/
+target/
+.DS_Store
+CLAUDE.md
+.claude/

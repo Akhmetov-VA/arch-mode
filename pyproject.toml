@@ -1,0 +1,25 @@
+[project]
+name = "archcheck"
+version = "0.1.0"
+description = "Architecture gate for arch-mode: Dependency Rule, component cycles and stability, fault-handling and design checks for Python."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+archcheck = "archcheck.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "coverage>=7"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]

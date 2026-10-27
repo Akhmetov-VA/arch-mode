@@ -129,3 +129,8 @@ def test_singleton_metaclass_is_a_warning(project):
 def test_new_without_instance_cache_is_fine(project):
     project.write({"m.py": "class Money(tuple):\n    def __new__(cls, amount):\n        return super().__new__(cls, (amount,))\n"})
     assert project.findings(rule="singleton") == []
+
+
+def test_other_metaclass_is_not_a_singleton(project):
+    project.write({"m.py": "import abc\nclass Port(metaclass=abc.ABCMeta):\n    pass\n"})
+    assert project.findings(rule="singleton") == []

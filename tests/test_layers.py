@@ -122,3 +122,16 @@ def test_layer_without_modules_is_a_config_error(project):
 def test_layer_without_a_name_is_numbered_from_one(project):
     project.layers('[[tool.archcheck.layers]]\nmodules = ["a"]\n[[tool.archcheck.layers]]\npure = true\n').write({"a.py": ""})
     assert "layer 2" in project.run()[1]
+
+
+def test_relative_import_from_own_package_is_resolved(project):
+    project.layers("""
+        [[tool.archcheck.layers]]
+        name = "core"
+        modules = ["app.core"]
+        [[tool.archcheck.layers]]
+        name = "web"
+        modules = ["app.core.web"]
+    """).write({"app/core/rules.py": "from .web import handler\n", "app/core/web/handler.py": ""})
+    [f] = project.findings(rule="dependency-rule")
+    assert f["path"] == "app/core/rules.py"
